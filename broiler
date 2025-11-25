@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>মুরগির বিক্রি হিসাব — Poultry Ledger (Receipt enabled)</title>
+  <style>
+    :root { font-family: "Noto Sans", Arial, sans-serif; }
+    body { margin:12px; background:#f7f8fb; color:#111; }
+    header { display:flex; align-items:center; gap:12px; }
+    h1 { margin:0; font-size:20px; }
+    .card { background:white; border-radius:8px; padding:12px; box-shadow:0 1px 6px rgba(10,10,20,0.06); margin-top:12px; }
+    label { display:block; font-size:13px; margin-top:8px; }
+    input[type="number"], input[type="text"], select { width:100%; padding:8px; margin-top:6px; box-sizing:border-box; border:1px solid #ddd; border-radius:6px; font-size:14px; }
+    .row { display:flex; gap:10px; }
+    .row > * { flex:1; }
+    button { padding:10px 12px; border:0; background:#0b79d0; color:white; border-radius:6px; font-weight:600; cursor:pointer; }
+    button.secondary { background:#666; }
+    .summary { display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; }
+    .stat { flex:1; min-width:140px; background:#f2f6fb; padding:10px; border-radius:8px; font-size:14px; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:14px; }
+    th, td { padding:8px; text-align:left; border-bottom:1px solid #eee; }
+    .muted { color:#666; font-size:13px; }
+    .actions button { margin-right:6px; padding:6px 8px; font-size:13px; }
+    .danger { background:#d9534f; color:white; border:none; border-radius:6px; padding:8px 10px; cursor:pointer; }
+    .small { font-size:13px; padding:6px 8px; border-radius:6px; }
+    input[type="checkbox"] { transform:scale(1.05); }
+    @media (min-width:700px){ .row-2 { display:flex; gap:12px; } .row-2 > * { flex:1; } }
+
+    /* Printable area hidden normally */
+    #printArea { display:none; }
+
+    /* Print styles: show only printArea */
+    @media print {
+      body * { visibility: hidden; }
+      #printArea, #printArea * { visibility: visible; }
+      #printArea { position: absolute; left: 0; top: 0; width: 100%; display:block; padding:20px; }
+      table { width:100%; border-collapse:collapse; }
+      table, th, td { border: 1px solid #222; }
+      th, td { padding:6px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🐔 ব্রয়লার হিসাবকারী — রশিদ/পিডিএফ যোগ করা হয়েছে</h1>
+  </header>
+
+  <section class="card" id="entryCard">
+    <div style="display:flex; gap:12px; align-items:center; justify-content:space-between;">
+      <strong>নতুন এন্ট্রি যোগ করো</strong>
+      <div class="muted">পল্লা একক ডিফল্ট = <span id="pallaSizeLabel">10</span> পিস</div>
+    </div>
+
+    <div class="row-2" style="margin-top:8px;">
+      <div>
+        <label>ক্রিয়া (Add = ভাণ্ডারে যোগ / Sale = বিক্রি)</label>
+        <select id="type">
+          <option value="in">Add (যোগ)</option>
+          <option value="out">Sale (বিক্রি)</option>
+        </select>
+
+        <label>ওজন (কেজি) — ঐ এন্ট্রির মোট ওজন</label>
+        <input id="weight" type="number" min="0" step="0.01" placeholder="যেমন: 12.50" />
+
+        <label>পিস (পিস সংখ্যা) — যদি না জানো, ফাঁকা রাখো</label>
+        <input id="pieces" type="number" min="0" step="1" placeholder="যেমন: 12" />
+      </div>
+
+      <div>
+        <label>গড় ওজন (প্রতি পিস গড়, কেজি) — থাকলে পিস অটোমেটিক পূরণ হবে</label>
+        <input id="avgWeight" type="number" min="0" step="0.01" placeholder="যদি জানো, লিখে দাও" />
+
+        <label>বিবরণ / নোট</label>
+        <input id="note" type="text" placeholder="ক্রেতা নাম, বাজার/তারিখ ইত্যাদি (ঐচ্ছিক)" style="padding:8px" />
+
+        <div style="display:flex; gap:8px; margin-top:12px;">
+          <button id="addBtn">এন্ট্রি সংরক্ষণ</button>
+          <button id="clearForm" class="secondary">বাতিল</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <label>পল্লার মাপ পরিবর্তন (পছন্দমত)</label>
+      <div style="display:flex; gap:8px;">
+        <input id="pallaSize" type="number" min="1" step="1" value="10" style="width:120px" />
+        <button id="setPalla" class="small secondary">সেট করো</button>
+        <div style="flex:1" class="muted">পল্লা = (পিস / পল্লা মাপ)।</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <strong>সারাংশ</strong>
+    <div class="summary">
+      <div class="stat">
+        <div class="muted">মোট পিস</div>
+        <div id="totalPieces" style="font-size:18px; font-weight:700">0</div>
+      </div>
+
+      <div class="stat">
+        <div class="muted">মোট পল্লা (পূর্ণ + ভগ্নাংশ)</div>
+        <div id="totalPalla" style="font-size:18px; font-weight:700">0.0</div>
+        <div class="muted" style="margin-top:6px" id="pallaBreak">0 পল্লা ও 0 পিস অবশিষ্ট</div>
+      </div>
+
+      <div class="stat">
+        <div class="muted">মোট ওজন (কেজি)</div>
+        <div id="totalWeight" style="font-size:18px; font-weight:700">0.00</div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px; display:flex; gap:8px;">
+      <button id="exportCsv" class="small">Export CSV</button>
+      <button id="printSummary" class="small">Print Summary (PDF)</button>
+      <button id="printSelected" class="small">Print Selected Receipt</button>
+      <button id="resetAll" class="small danger">সব ডিলিট করো</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <strong>রেকর্ডেড এন্ট্রিগুলো (নিচে যে এন্ট্রিগুলো সিলেক্ট করবে, সেগুলোই রশিদে যাবে)</strong>
+    <div class="muted" style="margin-top:6px">সিরিয়াল চেকবক্স টিক দিয়ে Print Selected ক্লিক করো।</div>
+
+    <table id="entriesTable" aria-live="polite">
+      <thead>
+        <tr>
+          <th><input id="selectAll" type="checkbox" title="Select all" /></th>
+          <th>সময়</th>
+          <th>টাইপ</th>
+          <th>ওজন (কেজি)</th>
+          <th>পিস</th>
+          <th>পল্লা (ডিসিমাল)</th>
+          <th>বিবরণ</th>
+          <th>অ্যাকশন</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- Hidden printable area -->
+  <div id="printArea" role="region" aria-label="Printable receipt area"></div>
+
+  <script>
+    // localStorage key
+    const STORAGE_KEY = "poultry_ledger_v1";
+    const DEFAULT_PALLA = 10;
+
+    let state = { pallaSize: DEFAULT_PALLA, entries: [] };
+
+    // DOM refs
+    const weightEl = document.getElementById("weight");
+    const piecesEl = document.getElementById("pieces");
+    const avgWeightEl = document.getElementById("avgWeight");
+    const noteEl = document.getElementById("note");
+    const typeEl = document.getElementById("type");
+    const addBtn = document.getElementById("addBtn");
+    const clearForm = document.getElementById("clearForm");
+    const entriesTableBody = document.querySelector("#entriesTable tbody");
+    const totalPiecesEl = document.getElementById("totalPieces");
+    const totalPallaEl = document.getElementById("totalPalla");
+    const totalWeightEl = document.getElementById("totalWeight");
+    const pallaSizeInput = document.getElementById("pallaSize");
+    const setPallaBtn = document.getElementById("setPalla");
+    const pallaSizeLabel = document.getElementById("pallaSizeLabel");
+    const pallaBreak = document.getElementById("pallaBreak");
+    const exportCsvBtn = document.getElementById("exportCsv");
+    const resetAllBtn = document.getElementById("resetAll");
+    const printArea = document.getElementById("printArea");
+    const printSelectedBtn = document.getElementById("printSelected");
+    const printSummaryBtn = document.getElementById("printSummary");
+    const selectAllCheckbox = document.getElementById("selectAll");
+
+    // load/save
+    function load() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        try { Object.assign(state, JSON.parse(raw)); } catch(e){ console.warn(e); }
+      }
+      if (!state.pallaSize || state.pallaSize < 1) state.pallaSize = DEFAULT_PALLA;
+      pallaSizeInput.value = state.pallaSize;
+      pallaSizeLabel.textContent = state.pallaSize;
+      render();
+    }
+    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+    // utilities
+    function parseNumber(v){ const x = parseFloat(v); return isNaN(x) ? 0 : x; }
+    function computeTotals(){
+      let totalPieces = 0, totalWeight = 0;
+      for (const e of state.entries){
+        const p = parseInt(e.pieces) || 0;
+        const w = parseFloat(e.weight) || 0;
+        if (e.type === "in") { totalPieces += p; totalWeight += w; }
+        else { totalPieces -= p; totalWeight -= w; }
+      }
+      const pallaDecimal = totalPieces / state.pallaSize;
+      const pallaFloor = Math.trunc(totalPieces / state.pallaSize);
+      const remainder = ((totalPieces % state.pallaSize) + state.pallaSize) % state.pallaSize;
+      return { totalPieces, totalWeight: Math.round(totalWeight*100)/100, pallaDecimal: Math.round(pallaDecimal*100)/100, pallaFloor, remainder };
+    }
+    function formatTime(iso){ const d=new Date(iso); return d.toLocaleString(); }
+
+    // add/edit/delete
+    function addEntry(entry){
+      entry.id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+      entry.ts = new Date().toISOString();
+      state.entries.unshift(entry);
+      save(); render();
+    }
+    function deleteEntry(id){ state.entries = state.entries.filter(e => e.id !== id); save(); render(); }
+    function editEntry(id, updates){
+      const i = state.entries.findIndex(e => e.id === id);
+      if (i>=0){ state.entries[i] = Object.assign({}, state.entries[i], updates); save(); render(); }
+    }
+
+    // render table + totals
+    function render(){
+      entriesTableBody.innerHTML = "";
+      for (const e of state.entries){
+        const tr = document.createElement("tr");
+        const palla = ((parseInt(e.pieces)||0) / state.pallaSize);
+        tr.innerHTML = `
+          <td><input class="row-select" data-id="${e.id}" type="checkbox" /></td>
+          <td>${formatTime(e.ts)}</td>
+          <td>${e.type === 'in' ? 'Add' : 'Sale'}</td>
+          <td>${(parseFloat(e.weight)||0).toFixed(2)}</td>
+          <td>${parseInt(e.pieces)||0}</td>
+          <td>${palla.toFixed(2)}</td>
+          <td>${e.note || ''}</td>
+          <td class="actions">
+            <button class="small" data-id="${e.id}" data-action="edit">Edit</button>
+            <button class="small" data-id="${e.id}" data-action="delete">Delete</button>
+          </td>
+        `;
+        entriesTableBody.appendChild(tr);
+      }
+      const t = computeTotals();
+      totalPiecesEl.textContent = t.totalPieces;
+      totalPallaEl.textContent = t.pallaDecimal.toFixed(2);
+      totalWeightEl.textContent = t.totalWeight.toFixed(2);
+      pallaBreak.textContent = `${t.pallaFloor} পল্লা এবং ${t.remainder} পিস অবশিষ্ট`;
+      pallaSizeLabel.textContent = state.pallaSize;
+    }
+
+    // events: add
+    addBtn.addEventListener("click", ()=>{
+      const weight = parseNumber(weightEl.value);
+      let pieces = parseInt(piecesEl.value);
+      const avg = parseNumber(avgWeightEl.value);
+      const type = typeEl.value;
+      const note = noteEl.value.trim();
+      if ((!weight || weight<=0) && (!pieces || pieces<=0)){ alert("কমপক্ষে ওজন বা পিসের মধ্যে একটায় মান লিখো।"); return; }
+      if ((!pieces || pieces<=0) && avg > 0){ pieces = Math.round((weight/avg)||0); }
+      if (!pieces || pieces < 0) pieces = 0;
+      addEntry({ type, weight: Math.round(weight*100)/100, pieces, note });
+      weightEl.value=""; piecesEl.value=""; avgWeightEl.value=""; noteEl.value="";
+    });
+
+    clearForm.addEventListener("click", ()=>{ weightEl.value=""; piecesEl.value=""; avgWeightEl.value=""; noteEl.value=""; typeEl.value="in"; });
+
+    entriesTableBody.addEventListener("click", (ev)=>{
+      const btn = ev.target.closest("button");
+      if (!btn) return;
+      const id = btn.dataset.id; const action = btn.dataset.action;
+      if (action === "delete"){ if (confirm("এন্ট্রি মুছে ফেলতে চাইছো?")) deleteEntry(id); }
+      else if (action === "edit"){
+        const entry = state.entries.find(e => e.id === id); if (!entry) return;
+        typeEl.value = entry.type; weightEl.value = entry.weight; piecesEl.value = entry.pieces; noteEl.value = entry.note;
+        deleteEntry(id);
+        window.scrollTo({top:0, behavior:"smooth"});
+      }
+    });
+
+    setPallaBtn.addEventListener("click", ()=>{
+      const v = parseInt(pallaSizeInput.value) || DEFAULT_PALLA;
+      if (v < 1){ alert("পল্লা একক কমপক্ষে 1 হতে হবে"); return; }
+      state.pallaSize = v; save(); render();
+    });
+
+    exportCsvBtn.addEventListener("click", ()=>{
+      const header = ["timestamp,type,weight,pieces,palla,note"];
+      const lines = state.entries.map(e => {
+        const palla = ((parseInt(e.pieces)||0)/state.pallaSize).toFixed(2);
+        return [e.ts, e.type, (parseFloat(e.weight)||0).toFixed(2), (parseInt(e.pieces)||0), palla, `"${(e.note||"").replace(/"/g,'""')}"`].join(",");
+      });
+      const csv = header.concat(lines).join("\n");
+      const blob = new Blob([csv], {type: "text/csv;charset=utf-8;"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "poultry_ledger.csv"; a.click(); URL.revokeObjectURL(url);
+    });
+
+    resetAllBtn.addEventListener("click", ()=>{
+      if (confirm("পুরো ডাটাবেস ক্লিয়ার করতে চাও? এই কাজ পুনরুদ্ধারযোগ্য নয়।")){
+        state.entries = []; save(); render();
+      }
+    });
+
+    // select all
+    selectAllCheckbox.addEventListener("change", ()=>{
+      const checked = selectAllCheckbox.checked;
+      document.querySelectorAll(".row-select").forEach(cb => cb.checked = checked);
+    });
+
+    // Print: build printable HTML in printArea and call window.print()
+    function buildReceiptHtml(selectedEntries, meta){
+      // meta: {title, subtitle, showTotals}
+      const farmName = meta.farmName || "আমার খামা";
+      const now = new Date();
+      const headerHtml = `
+        <div style="text-align:center;margin-bottom:8px;">
+          <div style="font-size:20px;font-weight:700;">${farmName}</div>
+          <div style="font-size:14px;">${meta.subtitle || 'পাল্লা/বিক্রয় রশিদ'}</div>
+          <div style="margin-top:6px;font-size:12px;">প্রিন্ট সময়: ${now.toLocaleString()}</div>
+        </div>
+      `;
+
+      const rows = selectedEntries.map((e, idx) => {
+        const p = parseInt(e.pieces) || 0;
+        const w = (parseFloat(e.weight)||0).toFixed(2);
+        const palla = (p / state.pallaSize).toFixed(2);
+        return `<tr>
+          <td style="width:5%;text-align:center;">${idx+1}</td>
+          <td style="width:25%;">${formatTime(e.ts)}</td>
+          <td style="width:12%;">${e.type === 'in' ? 'Add' : 'Sale'}</td>
+          <td style="width:12%;text-align:right;">${w}</td>
+          <td style="width:12%;text-align:right;">${p}</td>
+          <td style="width:12%;text-align:right;">${palla}</td>
+          <td style="width:20%;">${(e.note||'')}</td>
+        </tr>`;
+      }).join("");
+
+      let totalsHtml = "";
+      if (meta.showTotals){
+        // compute totals over selectedEntries (in/out directionally)
+        let tPieces = 0, tWeight = 0;
+        for (const e of selectedEntries){
+          const p = parseInt(e.pieces) || 0;
+          const w = parseFloat(e.weight) || 0;
+          if (e.type === "in"){ tPieces += p; tWeight += w; } else { tPieces -= p; tWeight -= w; }
+        }
+        const pallaDecimal = (tPieces / state.pallaSize);
+        const pallaFloor = Math.trunc(tPieces / state.pallaSize);
+        const remainder = ((tPieces % state.pallaSize) + state.pallaSize) % state.pallaSize;
+        totalsHtml = `
+          <div style="margin-top:12px;">
+            <strong>সারাংশ (সিলেক্টেড):</strong>
+            <div>মোট পিস: ${tPieces}</div>
+            <div>মোট পল্লা: ${pallaDecimal.toFixed(2)} (${pallaFloor} পল্লা এবং ${remainder} পিস)</div>
+            <div>মোট ওজন: ${tWeight.toFixed(2)} কেজি</div>
+          </div>
+        `;
+      }
+
+      const footerHtml = `
+        <div style="margin-top:20px; display:flex; justify-content:space-between;">
+          <div>প্রস্তুতকারক: __________________</div>
+          <div>গ্রাহক স্বাক্ষর: __________________</div>
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:#333;">(রশিদটি সংরক্ষণের জন্য সংরক্ষণ করে রাখুন)</div>
+      `;
+
+      return `
+        <div>
+          ${headerHtml}
+          <table style="width:100%; margin-top:6px; border-collapse:collapse;">
+            <thead>
+              <tr>
+                <th style="border:1px solid #222;padding:6px;">#</th>
+                <th style="border:1px solid #222;padding:6px;">সময়</th>
+                <th style="border:1px solid #222;padding:6px;">টাইপ</th>
+                <th style="border:1px solid #222;padding:6px;text-align:right;">ওজন(কেজি)</th>
+                <th style="border:1px solid #222;padding:6px;text-align:right;">পিস</th>
+                <th style="border:1px solid #222;padding:6px;text-align:right;">পল্লা</th>
+                <th style="border:1px solid #222;padding:6px;">বিবরণ</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+          ${totalsHtml}
+          ${footerHtml}
+        </div>
+      `;
+    }
+
+    // function to get selected entries
+    function getSelectedEntries(){
+      const ids = Array.from(document.querySelectorAll(".row-select"))
+        .filter(cb => cb.checked)
+        .map(cb => cb.dataset.id);
+      return state.entries.filter(e => ids.includes(e.id));
+    }
+
+    // Print selected entries as receipt
+    printSelectedBtn.addEventListener("click", ()=>{
+      const selected = getSelectedEntries();
+      if (!selected || selected.length === 0){ alert("প্রিন্ট করার জন্য কমপক্ষে একটি এন্ট্রি সিলেক্ট করো।"); return; }
+      // build print HTML
+      const html = buildReceiptHtml(selected, { title: "Receipt", subtitle: "সিলেক্টেড এন্ট্রির রশিদ", showTotals: true, farmName: "আমার খামা" });
+      printArea.innerHTML = html;
+      // open print dialog
+      window.print();
+      // small delay to clear printable area (optional)
+      setTimeout(()=>{ printArea.innerHTML = ""; }, 500);
+    });
+
+    // Print overall summary (all entries) — useful for end-of-day
+    printSummaryBtn.addEventListener("click", ()=>{
+      const allEntries = state.entries.slice(); // copy
+      if (!allEntries || allEntries.length === 0){ if (!confirm("তুমি এখনো কোন এন্ট্রি যোগ করো নি — তারপরও সারাংশ প্রিন্ট করতে চাও?")) return; }
+      const html = buildReceiptHtml(allEntries, { title: "Summary", subtitle: "মোট রশিদ / সারাংশ", showTotals: true, farmName: "আমার খামা" });
+      printArea.innerHTML = html;
+      window.print();
+      setTimeout(()=>{ printArea.innerHTML = ""; }, 500);
+    });
+
+    // auto-calc pieces when avg provided
+    avgWeightEl.addEventListener("blur", ()=>{
+      const p = parseInt(piecesEl.value) || 0;
+      const avg = parseNumber(avgWeightEl.value);
+      const weight = parseNumber(weightEl.value);
+      if ((!p || p <= 0) && avg > 0 && weight > 0) { piecesEl.value = Math.round(weight / avg); }
+    });
+
+    // init
+    load();
+    console.log("Poultry Ledger with receipt loaded. localStorage key:", STORAGE_KEY);
+  </script>
+</body>
+</html>
